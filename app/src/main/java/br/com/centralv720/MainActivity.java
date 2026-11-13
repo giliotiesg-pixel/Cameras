@@ -17,6 +17,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private MediaPlayer player;
     private TextView status;
     private String activeUrl = "";
+    private CameraDiscovery discovery;
     private final int blue = Color.rgb(20,62,112);
     @Override public void onCreate(Bundle b) { super.onCreate(b); showHome(); }
     private TextView text(String s, int size) { TextView v=new TextView(this);v.setText(s);v.setTextSize(size);v.setTextColor(blue);v.setPadding(12,12,12,12);return v; }
@@ -24,7 +25,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private void base(String title) { root=new LinearLayout(this);root.setOrientation(1);root.setPadding(14,18,14,10);root.setBackgroundColor(Color.rgb(245,247,251));setContentView(root);root.addView(text(title,24)); }
     private JSONArray cameras() { try{return new JSONArray(getPreferences(0).getString("cameras","[]"));}catch(Exception e){return new JSONArray();} }
     private void save(JSONArray a){getPreferences(0).edit().putString("cameras",a.toString()).apply();}
-    private void showHome(){stop();base("CENTRAL V720");root.addView(text("Câmeras cadastradas • Wi-Fi / Internet",15));root.addView(button("+ Adicionar câmera",()->addCamera()));root.addView(button("Ler QR Code da câmera",()->new IntentIntegrator(this).setPrompt("Aponte para o QR Code").setBeepEnabled(false).initiateScan()));ScrollView sc=new ScrollView(this);list=new LinearLayout(this);list.setOrientation(1);sc.addView(list);root.addView(sc);JSONArray a=cameras();if(a.length()==0)list.addView(text("Nenhuma câmera cadastrada. Adicione um endereço RTSP para testar.",15));for(int i=0;i<a.length();i++){final int idx=i;JSONObject c=a.optJSONObject(i);if(c==null)continue;String name=c.optString("name","Câmera");String url=c.optString("url","");list.addView(button("▶ "+name,()->play(name,url)));list.addView(button("Excluir "+name,()->new AlertDialog.Builder(this).setMessage("Excluir câmera?").setNegativeButton("Cancelar",null).setPositiveButton("Excluir",(d,w)->{JSONArray n=new JSONArray();for(int j=0;j<a.length();j++)if(j!=idx)n.put(a.opt(j));save(n);showHome();}).show()));}}
+    private void showHome(){stop();base("CENTRAL V720");root.addView(text("Câmeras cadastradas • Wi-Fi / Internet",15));root.addView(button("Buscar câmeras no Wi-Fi",()->scanCameras()));root.addView(button("+ Adicionar câmera",()->addCamera()));root.addView(button("Ler QR Code da câmera",()->new IntentIntegrator(this).setPrompt("Aponte para o QR Code").setBeepEnabled(false).initiateScan()));ScrollView sc=new ScrollView(this);list=new LinearLayout(this);list.setOrientation(1);sc.addView(list);root.addView(sc);JSONArray a=cameras();if(a.length()==0)list.addView(text("Nenhuma câmera cadastrada. Adicione um endereço RTSP para testar.",15));for(int i=0;i<a.length();i++){final int idx=i;JSONObject c=a.optJSONObject(i);if(c==null)continue;String name=c.optString("name","Câmera");String url=c.optString("url","");list.addView(button("▶ "+name,()->play(name,url)));list.addView(button("Excluir "+name,()->new AlertDialog.Builder(this).setMessage("Excluir câmera?").setNegativeButton("Cancelar",null).setPositiveButton("Excluir",(d,w)->{JSONArray n=new JSONArray();for(int j=0;j<a.length();j++)if(j!=idx)n.put(a.opt(j));save(n);showHome();}).show()));}}
     @Override protected void onActivityResult(int requestCode,int resultCode,Intent data){
         super.onActivityResult(requestCode,resultCode,data);
         IntentResult scan=IntentIntegrator.parseActivityResult(requestCode,resultCode,data);
@@ -46,6 +47,24 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 }).setNegativeButton("Fechar",null).show();
         }
     }
+    private void scanCameras(){
+        stop();base("Localizar câmeras no Wi-Fi");
+        root.addView(text("Busca IPs e portas 554, 8554, 80, 8080, 8899 e respostas WS-Discovery/ONVIF. Não confirma transmissão de vídeo.",14));
+        TextView info=text("Preparando busca...",14);root.addView(info);
+        ScrollView scroll=new ScrollView(this);LinearLayout results=new LinearLayout(this);results.setOrientation(1);scroll.addView(results);
+        root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
+        root.addView(button("Cancelar e voltar",()->{if(discovery!=null)discovery.cancel();discovery=null;showHome();}));
+        discovery=new CameraDiscovery(this);
+        discovery.scan(new CameraDiscovery.Listener(){
+            public void onProgress(String message){runOnUiThread(()->{if(discovery!=null)info.setText(message);});}
+            public void onFound(String ip,String details){runOnUiThread(()->{
+                if(discovery==null)return;
+                results.addView(text(ip+" — "+details,14));
+                results.addView(button("Testar RTSP em "+ip,()->addCamera("rtsp://"+ip+":554/")));
+            });}
+            public void onComplete(String summary){runOnUiThread(()->{if(discovery!=null)info.setText(summary);});}
+        });
+    }
     private void addCamera(){addCamera("");}
     private void addCamera(String suggested){base("Adicionar câmera");EditText name=new EditText(this);name.setSingleLine(true);name.setHint("Nome: Escritório");root.addView(name);EditText url=new EditText(this);url.setSingleLine(true);url.setHint("rtsp://IP:554/caminho");url.setText(suggested);root.addView(url);root.addView(text("A câmera precisa oferecer RTSP. O aplicativo V720 pode utilizar um protocolo fechado.",14));root.addView(button("Salvar câmera",()->{String u=url.getText().toString().trim();if(!u.startsWith("rtsp://")&&!u.startsWith("rtsps://")){Toast.makeText(this,"Informe um endereço RTSP válido",Toast.LENGTH_LONG).show();return;}try{JSONObject o=new JSONObject();o.put("name",name.getText().toString().trim().isEmpty()?"Câmera":name.getText().toString().trim());o.put("url",u);JSONArray a=cameras();a.put(o);save(a);showHome();}catch(Exception e){Toast.makeText(this,"Erro ao salvar",Toast.LENGTH_LONG).show();}}));root.addView(button("Voltar",()->showHome()));}
     private void play(String name,String url){stop();activeUrl=url;base(name);surface=new SurfaceView(this);root.addView(surface,new LinearLayout.LayoutParams(-1,0,1));surface.getHolder().addCallback(this);status=text("Conectando...",15);root.addView(status);root.addView(button("Voltar às câmeras",()->showHome()));}
@@ -53,5 +72,5 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     @Override public void surfaceChanged(SurfaceHolder h,int f,int w,int ht){}
     @Override public void surfaceDestroyed(SurfaceHolder h){stop();}
     private void stop(){activeUrl="";if(player!=null){try{player.reset();player.release();}catch(Exception ignored){}player=null;}}
-    @Override protected void onDestroy(){stop();super.onDestroy();}
+    @Override protected void onDestroy(){if(discovery!=null)discovery.cancel();stop();super.onDestroy();}
 }
