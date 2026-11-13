@@ -30,10 +30,24 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         IntentResult scan=IntentIntegrator.parseActivityResult(requestCode,resultCode,data);
         if(scan==null||scan.getContents()==null)return;
         String value=scan.getContents().trim();
-        if(value.startsWith("rtsp://")||value.startsWith("rtsps://")){addCamera();new AlertDialog.Builder(this).setTitle("Endereço RTSP identificado").setMessage(value+"\\nCopie o endereço para cadastrar a câmera.").setPositiveButton("Copiar",(d,w)->{((android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(ClipData.newPlainText("RTSP",value));}).show();}
-        else new AlertDialog.Builder(this).setTitle("QR Code identificado").setMessage("Conteúdo: "+value+"\\n\\nEste código não é um endereço RTSP. Pode ser um link de instalação ou ID da câmera. Não confirma compatibilidade de vídeo.").setPositiveButton("OK",null).show();
+        if(value.startsWith("rtsp://")||value.startsWith("rtsps://")){
+            addCamera(value);
+            Toast.makeText(this,"Endereço RTSP preenchido. Informe o nome e salve.",Toast.LENGTH_LONG).show();
+        } else {
+            String message;
+            if(value.startsWith("https://")||value.startsWith("http://"))
+                message="O QR Code contém um link, provavelmente para instalar ou configurar o aplicativo original. Não é um endereço de vídeo.";
+            else
+                message="O QR Code contém um identificador ou texto, não um endereço RTSP. A conexão de vídeo precisa ser identificada separadamente.";
+            new AlertDialog.Builder(this).setTitle("QR Code lido").setMessage(message+"\\n\\nConteúdo: "+value)
+                .setPositiveButton("Copiar código",(d,w)->{
+                    ((android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE))
+                        .setPrimaryClip(ClipData.newPlainText("Código da câmera",value));
+                }).setNegativeButton("Fechar",null).show();
+        }
     }
-    private void addCamera(){base("Adicionar câmera");EditText name=new EditText(this);name.setSingleLine(true);name.setHint("Nome: Escritório");root.addView(name);EditText url=new EditText(this);url.setSingleLine(true);url.setHint("rtsp://IP:554/caminho");root.addView(url);root.addView(text("A câmera precisa oferecer RTSP. O aplicativo V720 pode utilizar um protocolo fechado.",14));root.addView(button("Salvar câmera",()->{String u=url.getText().toString().trim();if(!u.startsWith("rtsp://")&&!u.startsWith("rtsps://")){Toast.makeText(this,"Informe um endereço RTSP válido",Toast.LENGTH_LONG).show();return;}try{JSONObject o=new JSONObject();o.put("name",name.getText().toString().trim().isEmpty()?"Câmera":name.getText().toString().trim());o.put("url",u);JSONArray a=cameras();a.put(o);save(a);showHome();}catch(Exception e){Toast.makeText(this,"Erro ao salvar",Toast.LENGTH_LONG).show();}}));root.addView(button("Voltar",()->showHome()));}
+    private void addCamera(){addCamera("");}
+    private void addCamera(String suggested){base("Adicionar câmera");EditText name=new EditText(this);name.setSingleLine(true);name.setHint("Nome: Escritório");root.addView(name);EditText url=new EditText(this);url.setSingleLine(true);url.setHint("rtsp://IP:554/caminho");url.setText(suggested);root.addView(url);root.addView(text("A câmera precisa oferecer RTSP. O aplicativo V720 pode utilizar um protocolo fechado.",14));root.addView(button("Salvar câmera",()->{String u=url.getText().toString().trim();if(!u.startsWith("rtsp://")&&!u.startsWith("rtsps://")){Toast.makeText(this,"Informe um endereço RTSP válido",Toast.LENGTH_LONG).show();return;}try{JSONObject o=new JSONObject();o.put("name",name.getText().toString().trim().isEmpty()?"Câmera":name.getText().toString().trim());o.put("url",u);JSONArray a=cameras();a.put(o);save(a);showHome();}catch(Exception e){Toast.makeText(this,"Erro ao salvar",Toast.LENGTH_LONG).show();}}));root.addView(button("Voltar",()->showHome()));}
     private void play(String name,String url){stop();activeUrl=url;base(name);surface=new SurfaceView(this);root.addView(surface,new LinearLayout.LayoutParams(-1,0,1));surface.getHolder().addCallback(this);status=text("Conectando...",15);root.addView(status);root.addView(button("Voltar às câmeras",()->showHome()));}
     @Override public void surfaceCreated(SurfaceHolder h){if(activeUrl.isEmpty())return;try{player=new MediaPlayer();player.setDisplay(h);player.setDataSource(this,android.net.Uri.parse(activeUrl));player.setOnPreparedListener(p->{status.setText("Transmitindo");p.start();});player.setOnErrorListener((p,what,extra)->{status.setText("Não foi possível abrir o vídeo. Verifique RTSP, rede e credenciais.");return true;});player.prepareAsync();}catch(Exception e){status.setText("Falha: "+e.getMessage());}}
     @Override public void surfaceChanged(SurfaceHolder h,int f,int w,int ht){}
