@@ -34,6 +34,7 @@ public final class CameraDiscovery {
                 if(local==null){l.onComplete("Rede IPv4 não encontrada.");return;}
                 l.onProgress("Wi-Fi: "+local+" /"+prefix+" • procurando serviços ONVIF e portas RTSP...");
                 discoverOnvif(network,l);
+                if(!cancelled)probe(network,"192.168.169.1",l);
                 // Limita a 254 endereços para evitar varredura excessiva em redes grandes.
                 byte[] b=InetAddress.getByName(local).getAddress();
                 int base=((b[0]&255)<<24)|((b[1]&255)<<16)|((b[2]&255)<<8)|(b[3]&255);
@@ -62,9 +63,20 @@ public final class CameraDiscovery {
                 socket.connect(new InetSocketAddress(ip,port),180);
                 if(found.length()>0)found.append(", ");
                 found.append(port);
+                if(port==554||port==8554){String response=rtspOptions(socket,ip,port);if(response.startsWith("RTSP/"))found.append(" (RTSP respondeu)");}
             }catch(Exception ignored){}
         }
         if(found.length()>0&&reported.add(ip))l.onFound(ip,"Portas TCP abertas: "+found+". RTSP/ONVIF não confirmados.");
+    }
+    private String rtspOptions(Socket socket,String ip,int port){
+        try{
+            socket.setSoTimeout(400);
+            OutputStream out=socket.getOutputStream();
+            out.write(("OPTIONS rtsp://"+ip+":"+port+"/ RTSP/1.0\\r\\nCSeq: 1\\r\\nUser-Agent: CentralV720\\r\\n\\r\\n").getBytes("US-ASCII"));
+            out.flush();
+            byte[] b=new byte[128];int n=socket.getInputStream().read(b);
+            return n>0?new String(b,0,n,"US-ASCII"):"";
+        }catch(Exception ignored){return "";}
     }
     private void discoverOnvif(Network network,Listener l){
         String xml="<?xml version=\"1.0\" encoding=\"UTF-8\"?><e:Envelope xmlns:e=\"http://www.w3.org/2003/05/soap-envelope\" xmlns:w=\"http://schemas.xmlsoap.org/ws/2004/08/addressing\" xmlns:d=\"http://schemas.xmlsoap.org/ws/2005/04/discovery\"><e:Header><w:MessageID>uuid:"+UUID.randomUUID()+"</w:MessageID><w:To>urn:schemas-xmlsoap-org:ws:2005:04:discovery</w:To><w:Action>http://schemas.xmlsoap.org/ws/2005/04/discovery/Probe</w:Action></e:Header><e:Body><d:Probe/></e:Body></e:Envelope>";
